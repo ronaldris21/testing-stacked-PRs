@@ -1,0 +1,712 @@
+<title>Stacked PRs: needsRebase and merge order</title>
+<style>
+  :root {
+    --ground: #F2F5F9;
+    --surface: #FFFFFF;
+    --sunken: #E8EDF4;
+    --ink: #131C28;
+    --ink-soft: #57657A;
+    --ink-faint: #8492A6;
+    --rule: #D6DEE9;
+    --accent: #1F5FA8;
+    --accent-soft: #E2ECF8;
+    --ok: #2C7A57;
+    --ok-soft: #DFF0E7;
+    --warn: #A76B14;
+    --warn-soft: #F8EDD8;
+    --crit: #A8433A;
+    --crit-soft: #F8E4E1;
+
+    /* Schematic plates stay fixed in both themes, like printed diagram plates. */
+    --plate: #EAF0F8;
+    --plate-ink: #131C28;
+    --plate-rule: #C3D2E6;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --col: 68ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D131B;
+      --surface: #151E29;
+      --sunken: #1B2634;
+      --ink: #E6ECF4;
+      --ink-soft: #94A3B6;
+      --ink-faint: #6B7B90;
+      --rule: #26313F;
+      --accent: #74AEEC;
+      --accent-soft: #17293D;
+      --ok: #63C193;
+      --ok-soft: #13291F;
+      --warn: #E0A94F;
+      --warn-soft: #2A2113;
+      --crit: #E5786D;
+      --crit-soft: #2B1917;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D131B;
+    --surface: #151E29;
+    --sunken: #1B2634;
+    --ink: #E6ECF4;
+    --ink-soft: #94A3B6;
+    --ink-faint: #6B7B90;
+    --rule: #26313F;
+    --accent: #74AEEC;
+    --accent-soft: #17293D;
+    --ok: #63C193;
+    --ok-soft: #13291F;
+    --warn: #E0A94F;
+    --warn-soft: #2A2113;
+    --crit: #E5786D;
+    --crit-soft: #2B1917;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .doc {
+    max-width: 1060px;
+    margin-inline: auto;
+    padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.1rem, 4vw, 3rem) 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(2.25rem, 5vw, 3.25rem);
+  }
+
+  .prose { max-width: var(--col); }
+
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+  h1 {
+    font-size: clamp(1.9rem, 4.4vw, 2.9rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+  }
+
+  h2 {
+    font-size: clamp(1.25rem, 2.4vw, 1.55rem);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+
+  h3 {
+    font-size: 1.02rem;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+  }
+
+  p { margin: 0; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+    color: var(--ink-faint);
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.875em;
+    background: var(--sunken);
+    padding: 0.12em 0.36em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* ---- masthead ---- */
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+    padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .lede {
+    max-width: 58ch;
+    font-size: clamp(1rem, 1.7vw, 1.14rem);
+    color: var(--ink-soft);
+  }
+
+  .statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+    margin-top: 0.35rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    font-family: var(--mono);
+    font-size: 0.755rem;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+    flex: none;
+  }
+
+  .chip .seq {
+    color: var(--ink-faint);
+    font-size: 0.7rem;
+  }
+
+  .arrow {
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+
+  /* ---- sections ---- */
+
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+  }
+
+  .sec-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding-top: 1.4rem;
+    border-top: 2px solid var(--ink);
+  }
+
+  /* ---- schematic plate ---- */
+
+  figure.plate {
+    margin: 0;
+    background: var(--plate);
+    border: 1px solid var(--plate-rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  figure.plate .plate-body {
+    overflow-x: auto;
+    padding: 1.35rem 1rem;
+  }
+
+  figure.plate pre.mermaid {
+    margin: 0;
+    min-width: min-content;
+    text-align: center;
+    color: var(--plate-ink);
+  }
+
+  figure.plate figcaption {
+    font-family: var(--mono);
+    font-size: 0.715rem;
+    color: #4A5A70;
+    padding: 0.6rem 0.9rem;
+    border-top: 1px dashed var(--plate-rule);
+    background: #E1E9F4;
+  }
+
+  /* ---- data table ---- */
+
+  .tablewrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.83rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 0.6rem 0.85rem;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 0.685rem;
+    text-transform: uppercase;
+    letter-spacing: 0.075em;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--sunken);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  td.m { font-family: var(--mono); font-size: 0.79rem; }
+  td.state-ok { color: var(--ok); font-family: var(--mono); font-size: 0.79rem; }
+
+  /* ---- callout ---- */
+
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 0.95rem 1.1rem;
+    font-size: 0.92rem;
+    max-width: var(--col);
+  }
+
+  .note.warn { border-left-color: var(--warn); }
+  .note strong { font-weight: 650; }
+
+  /* ---- scenarios ---- */
+
+  .scenarios {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+
+  article.scenario {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .scenario-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.7rem;
+    padding: 0.95rem 1.15rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--sunken);
+  }
+
+  .scenario-head h3 { flex: 1 1 18rem; }
+
+  .verdict {
+    font-family: var(--mono);
+    font-size: 0.685rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.24rem 0.5rem;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  .verdict.go { background: var(--ok-soft); color: var(--ok); }
+  .verdict.hold { background: var(--warn-soft); color: var(--warn); }
+  .verdict.no { background: var(--crit-soft); color: var(--crit); }
+
+  .scenario-body {
+    padding: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .scenario-body p { max-width: var(--col); font-size: 0.95rem; }
+
+  .cmd {
+    font-family: var(--mono);
+    font-size: 0.815rem;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.65rem 0.85rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--ink);
+  }
+
+  .cmd .c { color: var(--ink-faint); }
+
+  ul.tight {
+    margin: 0;
+    padding-left: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.95rem;
+    max-width: var(--col);
+  }
+
+  ul.tight li::marker { color: var(--ink-faint); }
+
+  .recap {
+    background: var(--accent-soft);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.25rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .recap ol {
+    margin: 0;
+    padding-left: 1.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.95rem;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a { transition: opacity 120ms ease; }
+  }
+</style>
+
+<main class="doc">
+
+  <header class="masthead">
+    <p class="eyebrow">testing-stacked-PRs &middot; stack #4 &middot; four open PRs</p>
+    <h1>What <code>needsRebase</code> means, and the order these PRs can land in</h1>
+    <p class="lede">
+      A stacked PR is not a normal PR: its base is the branch below it, not <code>master</code>.
+      That single fact decides when a rebase is needed and what is allowed to merge first.
+    </p>
+    <div class="statusbar">
+      <span class="chip"><span class="seq">trunk</span> master</span>
+      <span class="arrow">&larr;</span>
+      <span class="chip"><span class="dot"></span><span class="seq">1</span> charmander <span class="seq">#1</span></span>
+      <span class="arrow">&larr;</span>
+      <span class="chip"><span class="dot"></span><span class="seq">2</span> squirtle <span class="seq">#2</span></span>
+      <span class="arrow">&larr;</span>
+      <span class="chip"><span class="dot"></span><span class="seq">3</span> bulbasaur <span class="seq">#3</span></span>
+      <span class="arrow">&larr;</span>
+      <span class="chip"><span class="dot"></span><span class="seq">4</span> pikachu <span class="seq">#5</span></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Part 1</p>
+      <h2>What the flag actually compares</h2>
+    </div>
+
+    <div class="prose">
+      <p>
+        Every branch in the stack stores one SHA: the tip of its parent <em>at the moment it was last
+        aligned</em>. <code>gh stack view --json</code> reports it as <code>base</code>. The flag is a
+        single comparison against that record:
+      </p>
+    </div>
+
+    <div class="note">
+      <p><strong><code>needsRebase: false</code></strong> &mdash; the parent's current tip is still an ancestor of this branch. Everything the parent has, this branch already contains.</p>
+      <p><strong><code>needsRebase: true</code></strong> &mdash; the parent's tip is no longer an ancestor. The parent moved on and this branch was left behind.</p>
+    </div>
+
+    <div class="prose">
+      <p>
+        Right now every layer's stored base is exactly its parent's current head, which is why the whole
+        stack reads clean:
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th>Stored base</th>
+            <th>Parent's tip now</th>
+            <th>Contained?</th>
+            <th>needsRebase</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="m">charmander</td><td class="m">3751989</td><td class="m">master 3751989</td><td class="m">yes</td><td class="state-ok">false</td></tr>
+          <tr><td class="m">squirtle</td><td class="m">527816d</td><td class="m">charmander 527816d</td><td class="m">yes</td><td class="state-ok">false</td></tr>
+          <tr><td class="m">bulbasaur</td><td class="m">c024b75</td><td class="m">squirtle c024b75</td><td class="m">yes</td><td class="state-ok">false</td></tr>
+          <tr><td class="m">pikachu</td><td class="m">0653d6f</td><td class="m">bulbasaur 0653d6f</td><td class="m">yes</td><td class="state-ok">false</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure class="plate">
+      <div class="plate-body">
+<pre class="mermaid">
+%%{init: {'theme':'base','gitGraph':{'mainBranchName':'master'},'themeVariables':{'git0':'#1F5FA8','git1':'#A8433A','git2':'#A76B14','git3':'#2C7A57','git4':'#7A4BA8','gitBranchLabel0':'#FFFFFF','gitBranchLabel1':'#FFFFFF','gitBranchLabel2':'#FFFFFF','gitBranchLabel3':'#FFFFFF','gitBranchLabel4':'#FFFFFF','commitLabelColor':'#131C28','commitLabelBackground':'#EAF0F8','fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','fontSize':'12px'}}}%%
+gitGraph
+   commit id: "3751989"
+   branch charmander
+   commit id: "527816d  PR #1"
+   branch squirtle
+   commit id: "c024b75  PR #2"
+   branch bulbasaur
+   commit id: "0653d6f  PR #3"
+   branch pikachu
+   commit id: "04b297f  PR #5"
+</pre>
+      </div>
+      <figcaption>The stack today. One commit drawn per layer; each real branch carries its own commits on top of the layer below.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <h3>Three things flip it to true</h3>
+      <ul class="tight">
+        <li><strong>You edit a lower layer.</strong> New commits on <code>charmander</code> mean the three branches above no longer contain its tip.</li>
+        <li><strong>Trunk moves.</strong> This already happened in this session: pushing the gh-stack skill install to <code>master</code> advanced it from <code>c51d6b7</code> to <code>3751989</code>, and <code>charmander</code> went stale instantly &mdash; then so did everything above it.</li>
+        <li><strong>A PR below yours merges.</strong> The merge puts new commits on the target branch that your branch has never seen.</li>
+      </ul>
+    </div>
+
+    <figure class="plate">
+      <div class="plate-body">
+<pre class="mermaid">
+%%{init: {'theme':'base','gitGraph':{'mainBranchName':'master'},'themeVariables':{'git0':'#1F5FA8','git1':'#A8433A','gitBranchLabel0':'#FFFFFF','gitBranchLabel1':'#FFFFFF','commitLabelColor':'#131C28','commitLabelBackground':'#EAF0F8','fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','fontSize':'12px'}}}%%
+gitGraph
+   commit id: "c51d6b7"
+   branch charmander
+   commit id: "charmander work"
+   checkout master
+   commit id: "3751989  skill install"
+</pre>
+      </div>
+      <figcaption>The real stale state from earlier today: charmander stored c51d6b7, master had moved to 3751989 &mdash; so master's tip was no longer an ancestor of charmander. needsRebase: true, cascading to all three branches above.</figcaption>
+    </figure>
+
+    <div class="prose">
+      <p>
+        Why it matters beyond tidiness: a stale layer's PR diff on GitHub stops showing only that
+        layer's work. That is the entire point of stacking &mdash; a reviewer opening
+        <code>#3</code> should see the bulbasaur change and nothing else.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Part 2</p>
+      <h2>The one rule that governs merging</h2>
+    </div>
+
+    <div class="prose">
+      <p>
+        <code>gh stack merge</code> never merges a single PR in isolation. What you pass decides the
+        <em>merge set</em>, and the set is all-or-nothing &mdash; if one PR in it cannot merge, none of
+        them do.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Command</th><th>Merge set</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="m">gh stack merge 4 --yes</td><td>every unmerged PR in stack&nbsp;#4 &mdash; all four</td></tr>
+          <tr><td class="m">gh stack merge 5 --yes</td><td>PR&nbsp;#5 <em>plus every unmerged PR below it</em> &mdash; #1, #2, #3, #5</td></tr>
+          <tr><td class="m">gh stack merge 2 --yes</td><td>PR&nbsp;#2 plus #1</td></tr>
+          <tr><td class="m">gh stack merge 1 --yes</td><td>PR&nbsp;#1 alone &mdash; it sits on trunk</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note warn">
+      <p><strong>Stack #4 holds four PRs, and the two numbers are unrelated.</strong> The stack was assigned id 4 by GitHub; it contains PRs #1, #2, #3 and #5. Passing <code>4</code> means "the whole stack", not "PR #4".</p>
+    </div>
+
+    <figure class="plate">
+      <div class="plate-body">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#DCE7F5','primaryTextColor':'#131C28','primaryBorderColor':'#1F5FA8','lineColor':'#57657A','fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','fontSize':'12px'}}}%%
+flowchart RL
+    P5["PR #5 pikachu"] --> P3["PR #3 bulbasaur"]
+    P3 --> P2["PR #2 squirtle"]
+    P2 --> P1["PR #1 charmander"]
+    P1 --> M(["master"])
+    style M fill:#E4F0E9,stroke:#2C7A57
+</pre>
+      </div>
+      <figcaption>Each PR targets the branch below it. Nothing above charmander has a path to master that does not pass through charmander first.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Part 3</p>
+      <h2>Your four questions, answered as scenarios</h2>
+    </div>
+
+    <div class="scenarios">
+
+      <article class="scenario">
+        <div class="scenario-head">
+          <h3>Everything lands in master at once</h3>
+          <span class="verdict go">what you want</span>
+        </div>
+        <div class="scenario-body">
+          <p>
+            One command, one merge set, all four PRs. Because the operation is all-or-nothing, either
+            master gets the complete feature or nothing moves at all &mdash; there is no half-landed state
+            to clean up.
+          </p>
+          <div class="cmd">gh stack merge 4 --yes --squash   <span class="c"># or --merge / --rebase</span></div>
+          <p>
+            This is the lowest-friction path in your setup, and it is the one I would recommend: no
+            intermediate rebase cascade, because nothing sits above an already-merged branch waiting
+            to be repointed.
+          </p>
+        </div>
+      </article>
+
+      <article class="scenario">
+        <div class="scenario-head">
+          <h3>Squirtle gets approved &mdash; merge it right away?</h3>
+          <span class="verdict hold">wait</span>
+        </div>
+        <div class="scenario-body">
+          <p>
+            No, and not because of policy &mdash; because of plumbing. PR&nbsp;#2's base is
+            <code>charmander</code>, not <code>master</code>. Merging it "right away" would move squirtle's
+            commits into the charmander branch, which is not where you want them.
+          </p>
+          <p>
+            Asking gh-stack to send it to master instead means <code>gh stack merge 2 --yes</code>, whose
+            merge set is <strong>#2 and #1 together</strong>. So squirtle's approval alone can never land
+            squirtle alone. Approval on a middle layer is a green light for that layer's review, not a
+            green light to merge.
+          </p>
+        </div>
+      </article>
+
+      <article class="scenario">
+        <div class="scenario-head">
+          <h3>Only pikachu is approved</h3>
+          <span class="verdict no">nothing can land</span>
+        </div>
+        <div class="scenario-body">
+          <p>
+            Pikachu is the top of the stack, so its merge set is the entire stack: #5, #3, #2 and #1.
+            Approving only the top approves the smallest amount of useful surface &mdash; pikachu's commits
+            physically sit on top of the other three, so they cannot reach master without them.
+          </p>
+          <div class="cmd">gh stack merge 5 --yes   <span class="c"># set = #1 + #2 + #3 + #5, all-or-nothing</span></div>
+          <p>
+            If the lower PRs are not mergeable, the command reports why and merges nothing. Approval
+            flows bottom-up in a stack; the top is always last, never first.
+          </p>
+        </div>
+      </article>
+
+      <article class="scenario">
+        <div class="scenario-head">
+          <h3>Charmander is approved and merged now</h3>
+          <span class="verdict hold">works, but costs you a cascade</span>
+        </div>
+        <div class="scenario-body">
+          <p>
+            This one is legal &mdash; charmander sits directly on trunk, so it can go alone. The cost lands
+            on the three branches above it.
+          </p>
+          <ul class="tight">
+            <li>PR&nbsp;#2's base has to be repointed from <code>charmander</code> to <code>master</code>.</li>
+            <li>If you <strong>squash</strong>-merge, master gets one brand-new commit and charmander's original commits never appear in master's history &mdash; so squirtle is still carrying commits whose content is already in master. Replaying them naively duplicates work and invites conflicts.</li>
+            <li>All three branches above flip to <code>needsRebase: true</code> until they are re-synced.</li>
+          </ul>
+          <p>
+            gh-stack handles exactly this with <code>--onto</code>, but its <code>sync</code> and
+            <code>rebase</code> commands cannot run in this repo &mdash; see below. The manual equivalent,
+            bottom-up:
+          </p>
+          <div class="cmd"><span class="c"># in the squirtle worktree — replay squirtle's own commits onto master,</span>
+<span class="c"># dropping charmander's now-merged ones</span>
+git fetch origin
+git rebase --onto origin/master charmander squirtle
+
+<span class="c"># then cascade upward, one worktree at a time</span>
+git rebase squirtle    <span class="c"># in stacked-prs-bulbasaur</span>
+git rebase bulbasaur   <span class="c"># in stacked-prs-pikachu</span>
+
+gh stack push          <span class="c"># pushes every branch in one shot</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Part 4</p>
+      <h2>The constraint specific to this repo</h2>
+    </div>
+
+    <div class="prose">
+      <p>
+        Every branch here lives in its own worktree. <code>gh stack sync</code> and
+        <code>gh stack rebase</code> both work by running <code>git checkout</code> on each branch in
+        turn, and git refuses to check out a branch that another worktree already holds. Both commands
+        fail with <code>already used by worktree</code>.
+      </p>
+      <p>
+        So in this repo the division of labour is fixed: gh-stack owns the GitHub side
+        (<code>link</code>, <code>view</code>, <code>push</code>, <code>merge</code>), and plain
+        <code>git rebase</code> per worktree does the local replaying. That is the pattern already
+        in use, and it is why partial merges cost noticeably more here than they would in a
+        single-worktree checkout.
+      </p>
+    </div>
+
+    <div class="note warn">
+      <p><strong>No branch protection, no required reviews, no merge queue on this repo.</strong> "Approved" carries no enforcement today &mdash; GitHub would let any mergeable PR through. Every ordering constraint above is structural, coming from the base-branch chain itself, not from review policy.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Recommendation</p>
+      <h2>If the goal is one simultaneous landing</h2>
+    </div>
+
+    <div class="recap">
+      <ol>
+        <li>Leave all four PRs open and merge nothing individually, however tempting a lone approval looks.</li>
+        <li>Collect review on all four. The stack is already clean, so each diff shows only its own layer.</li>
+        <li>Run the readiness check: <code>gh stack view --json</code>, confirm four times <code>needsRebase: false</code>.</li>
+        <li>Land the whole stack in one operation: <code>gh stack merge 4 --yes --squash</code>.</li>
+        <li>Clean up afterwards &mdash; the four worktrees and their local branches survive the merge, since this repo does not auto-delete merged branches.</li>
+      </ol>
+    </div>
+  </section>
+
+</main>
